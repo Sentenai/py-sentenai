@@ -2,31 +2,41 @@ import pytest
 
 from hypothesis            import given, assume, example
 from hypothesis.strategies import text, dictionaries
-from sentenai              import stream
-from sentenai.flare        import StreamPath
+from sentenai.api.stream   import Stream
+from sentenai.historiQL    import StreamPath
+from sentenai.hql          import V
+
+def stream(name, *filters):
+    return Stream(None, name, {}, None, True, *filters)
 
 @given(text())
 def test_named_streams(name):
     s = stream(name)
-    assume(s._name == name)
+    assume(s.name == name)
 
 
 @given(text())
 def test_stream_equality(name):
-    class StreamStub:
-        _name = name
-        def __init__(self):
-            pass
-
     s1 = stream(name)
     s2 = stream(name)
     s3 = stream(name + " lies")
 
-    assume(stream(name) == StreamStub())
     assume(s1 == s2)
     assume(not s1 is s2)
     assume(not (s1 == s3))
 
+@given(text())
+def test_filtered_streams(name):
+    s1 = stream(name)
+    s2 = stream(name)
+    s3 = stream(name + " lies")
+
+    assume(s1.filtered(V.temp > 32) == stream(name, V.temp > 32))
+    assume(s1.filtered(V.temp > 100) != stream(name, V.temp < 0))
+    assume(s3.filtered(V.temp > 32) != stream(name, V.temp > 32))
+
+    s4 = s1.filtered(V.temp > 1000)
+    assume(s4.filtered(V.temp > 32, replace=True) == stream(name, V.temp > 32))
 
 @given(text(min_size=1), dictionaries(text(min_size=1), text()))
 def test_stream_properties(name, meta):
@@ -39,14 +49,8 @@ def test_stream_properties(name, meta):
 @given(text(min_size=1), dictionaries(text(min_size=1), text()))
 def test_happy_stream_getitems(name, meta):
     s = stream(name, meta)
-    assume(s["meta"] == meta)
-    assume(s["name"] == name)
-
-@given(text(min_size=1).filter(lambda x: not (x == 'name' or x == 'meta')))
-def test_sad_stream_getitems(extra):
-    s = stream("")
-    with pytest.raises(KeyError):
-        s[extra]
+    assume(s.meta == meta)
+    assume(s.name == name)
 
 @given(text(min_size=1))
 def test_stream_to_string(name):
@@ -59,8 +63,7 @@ def test_stream_to_string(name):
 @example(path="meta")
 def test_stream_path_conversions(path):
     s = stream("")
-    assume(type(s._(path)) == StreamPath)
-    assume(type(s.__getattr__(path)) == StreamPath)
+    assume(type(s[path]) == StreamPath)
 
 @given(text())
 def test_stream_calls(path):
